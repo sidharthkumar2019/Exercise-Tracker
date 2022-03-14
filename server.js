@@ -5,6 +5,7 @@ const bodyParser = require('body-parser')
 require('dotenv').config();
 const {mongoose} = require('mongoose');
 const User = require('./models/User');
+const Exercise = require('./models/Exercise');
 const {Schema} = mongoose;
 
 app.use(cors())
@@ -24,11 +25,11 @@ app.post('/api/users', async(req, res)=> {
   try {
     let record = await User.findOne({username: username});
     if ( record )
-      res.json(record);
+      res.send({username: record.username, _id: record._id});
     else {
-      let newRecord = new User({username: username});
+      let newRecord = new User({username: username, count: 0, log: []});
       await newRecord.save();
-      res.json(newRecord);
+      res.send({username: newRecord.username, _id: newRecord._id});
     }
   } catch (error) {
     console.log(error.message);
@@ -43,7 +44,59 @@ app.get('/api/users', async(req, res) => {
     console.log(error.message);
   }
 
-  res.json(users);
+  res.send(users);
+});
+
+app.post('/api/users/:_id/exercises', async(req, res)=> {
+  let user;
+  try {
+    user = await User.findOne({_id: req.params._id});
+    if (!user) return res.status(404).send('User not found');
+  } catch (error) {
+    console.log(error);
+    return res.send(error.message);
+  }
+  
+  let {description, duration, date} = req.body;
+  if (!date) date = (new Date()).toDateString();
+  else date = (new Date(date)).toDateString();
+
+  let newExercise = new Exercise({
+    description: description,
+    duration: duration,
+    date: date
+  });
+
+  user.log.push(newExercise);
+  user.count += 1;
+
+  await user.save();
+
+  res.send({
+    description: newExercise.description,
+    duration: newExercise.duration,
+    date: newExercise.date,
+    username: user.username,
+    _id: user._id
+  });
+});
+
+app.get('/api/users/:_id/logs', async(req, res) => {
+  let user;
+  try {
+    user = await User.findOne({_id: req.params._id});
+    if (!user) return res.status(404).send('User not found.');
+  } catch (error) {
+    console.log(error);
+    return res.send(error);
+  }
+
+  const {from, to, limit} = req.query;
+  if ( from && to && limit )
+    user.log = user.log.filter(exercise => Date(exercise.date) >= Date(from) && Date(exercise.date) <= Date(to));
+  if ( limit )
+    user.log = user.log.slice(0, limit);
+  res.send(user);
 });
 
 const listener = app.listen(process.env.PORT || 3000, () => {
